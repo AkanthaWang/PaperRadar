@@ -66,7 +66,7 @@ class OpenReviewScraper:
 
         with open(self.output_csv, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            writer.writerow(['paper_id', 'title', 'type', 'keywords', 'abstract'])
+            writer.writerow(['paper_id', 'title', 'type', 'keywords', 'abstract', 'url'])
 
             for paper_type, paper_list in grouped_papers.items():
                 for paper in paper_list:
@@ -74,7 +74,8 @@ class OpenReviewScraper:
                     title = paper.content.get('title', {}).get('value', '').replace('\n', ' ')
                     keywords = ','.join(paper.content.get('keywords', {}).get('value', []))
                     abstract = paper.content.get('abstract', {}).get('value', '').replace('\n', ' ')
-                    writer.writerow([paper_id, title, paper_type, keywords, abstract])
+                    url = f'https://openreview.net/pdf?id={paper_id}'
+                    writer.writerow([paper_id, title, paper_type, keywords, abstract, url])
         print(f'CSV 已保存至: {self.output_csv}')
 
     def run(self) -> None:

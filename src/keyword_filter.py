@@ -62,7 +62,7 @@ def argparse_args() -> argparse.Namespace:
 	parser.add_argument("--output-dir", default="filtered_data", help="Output directory for filtered csv files (relative to project root by default).")
 	parser.add_argument("--keyword", default="emotion", help="Keyword to match in title.")
 	parser.add_argument("--conference-name", default="AAAI", help="Conference name, e.g. AAAI.")
-	parser.add_argument("--conference-year", default="2025", help="Conference year, e.g. 2026.")
+	parser.add_argument("--conference-year", default="2026", help="Conference year, e.g. 2026.")
 	parser.add_argument("--types", default="oral,poster,spotlight", help="Allowed types, comma-separated.")
 	return parser.parse_args()
 

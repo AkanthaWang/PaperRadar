@@ -56,6 +56,13 @@ python src/keyword_filter.py --keyword "emotion" --conference-name AAAI --confer
 ```
 *过滤后的结果将保存至 `filtered_data/` 目录下。*
 
+### 4. 下载论文 PDF
+使用 `src/paper_download.py` 根据抓取的元数据批量下载论文（脚本会自动从 CSV 文件名中提取会议和年份）：
+```bash
+python src/paper_download.py --csv-path data/neurips2025_metadata.csv
+```
+*下载的 PDF 将按 `年份_会议_标题.pdf` 格式保存至 `downloads/` 目录。*
+
 ## 📂 项目结构
 
 ```text
@@ -65,7 +72,8 @@ PaperRadar/
 ├── src/                # 源代码目录
 │   ├── openreview_scraper.py  # OpenReview 平台抓取工具
 │   ├── paper_scraper.py       # CVF/DBLP/ECVA 平台抓取工具
-│   └── keyword_filter.py      # 论文关键词过滤工具
+│   ├── keyword_filter.py      # 论文关键词过滤工具
+│   └── paper_download.py      # 论文 PDF 批量下载工具
 └── README.md
 ```
 
