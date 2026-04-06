@@ -1,0 +1,8 @@
+.env
+.vscode
+__pycache__/
+data/*
+filtered_data/*
+output/figures/*
+output/tables/*
+utils
