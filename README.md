@@ -71,6 +71,6 @@ PaperRadar/
 
 ## 📝 注意事项
 
-- **API 限制**：抓取 OpenReview 数据时，建议配置环境变量 `OPENREVIEW_USERNAME` 和 `OPENREVIEW_PASSWORD`（虽然脚本内目前有硬编码的账号，但建议使用自己的账号以防限制）。
+- **API 限制**：抓取 OpenReview 数据时，建议配置环境变量 `OPENREVIEW_USERNAME` 和 `OPENREVIEW_PASSWORD`。
 - **网络环境**：抓取部分海外学术网站（如 CVF）可能需要稳定的网络环境。
 - **合法合规**：请在遵守各大学术平台 Robots 协议的前提下使用本工具，仅限科研学术用途。

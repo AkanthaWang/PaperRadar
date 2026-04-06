@@ -334,7 +334,7 @@ def export_papers_metadata(conference, year, conference_url, output_path, patter
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Paper 会议论文数据抓取工具')
     parser.add_argument('--conference_name', default='AAAI', help='会议名称，例如 AAAI')
-    parser.add_argument('--conference_year', default='2025', help='会议年份，例如 2025')
+    parser.add_argument('--conference_year', default='2026', help='会议年份，例如 2025')
     return parser.parse_args()
 
 

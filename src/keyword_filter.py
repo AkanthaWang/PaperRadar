@@ -1,11 +1,8 @@
 import argparse
 from pathlib import Path
-
 import pandas as pd
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-
 
 def filter_titles_by_keyword(
 	input_dir: Path,
@@ -59,7 +56,6 @@ def filter_titles_by_keyword(
 	result.to_csv(output_file, index=False, encoding="utf-8-sig")
 	return len(result)
 
-
 def argparse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(description="Filter papers by keyword in title from csv files.")
 	parser.add_argument("--input-dir", default="data", help="Directory containing source csv files (relative to project root by default).")
@@ -69,9 +65,6 @@ def argparse_args() -> argparse.Namespace:
 	parser.add_argument("--conference-year", default="2025", help="Conference year, e.g. 2026.")
 	parser.add_argument("--types", default="oral,poster,spotlight", help="Allowed types, comma-separated.")
 	return parser.parse_args()
-
-
-
 
 def main():
 	args = argparse_args()
