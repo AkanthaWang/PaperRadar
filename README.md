@@ -17,6 +17,20 @@ PaperRadar 是一个轻量级工具，旨在帮助研究人员高效地从各大
 | **CVF / ECVA** | CVPR, ICCV, ECCV | `src/paper_scraper.py` |
 | **DBLP** | AAAI, ACMMM | `src/paper_scraper.py` |
 
+## 📂 项目结构
+
+```text
+PaperRadar/
+├── data/               # 存放抓取的原始 CSV 数据
+├── filtered_data/      # 存放过滤后的 CSV 数据
+├── src/                # 源代码目录
+│   ├── openreview_scraper.py  # OpenReview 平台抓取工具
+│   ├── paper_scraper.py       # CVF/DBLP/ECVA 平台抓取工具
+│   ├── keyword_filter.py      # 论文关键词过滤工具
+│   └── paper_download.py      # 论文 PDF 批量下载工具
+└── README.md
+```
+
 ## 🛠️ 安装步骤
 
 1. **克隆仓库**：
@@ -63,19 +77,24 @@ python src/paper_download.py --csv-path data/neurips2025_metadata.csv
 ```
 *下载的 PDF 将按 `年份_会议_标题.pdf` 格式保存至 `downloads/` 目录。*
 
-## 📂 项目结构
+## 📅 人工智能方向会议时间
 
-```text
-PaperRadar/
-├── data/               # 存放抓取的原始 CSV 数据
-├── filtered_data/      # 存放过滤后的 CSV 数据
-├── src/                # 源代码目录
-│   ├── openreview_scraper.py  # OpenReview 平台抓取工具
-│   ├── paper_scraper.py       # CVF/DBLP/ECVA 平台抓取工具
-│   ├── keyword_filter.py      # 论文关键词过滤工具
-│   └── paper_download.py      # 论文 PDF 批量下载工具
-└── README.md
-```
+| 会议名称 | CCF 分级 | 年次 | 时间 | 会议类型 |
+| :--- | :--- | :--- | :--- | :--- |
+| IJCAI | CCF B | 一年一次 | 一月中旬 | CV |
+| ICML | CCF A | 一年一次 | 一月下旬 | 机器学习 |
+| ACL | CCF A | 一年一次 | 二月中旬 | NLP |
+| ECCV | CCF B | 两年一次(偶数) | 三月上旬 | CV |
+| ICCV | CCF A | 一次(奇数) | 三月中上旬 | CV |
+| ACMMM | CCF A | 一年一次 | 三月下旬或者四月初 | 多模态 |
+| NeurIPS | CCF A | 一年一次 | 五月中下旬 | 多模态 |
+| EMNLP | CCF B | 一年一次 | 六月下旬 | NLP |
+| AAAI | CCF A | 一年一次 | 九月上旬 | 多模态 |
+| CHI | CCF A | 一年一次 | 九月中旬 | 人机交互 |
+| ICLR | CCF A | 一年一次 | 10月上旬 | CV |
+| COLING | CCF B | 两年一次 | 10月下旬 | CV |
+| CVPR | CCF A | 一年一次 | 11月中旬 | CV |
+| ICME | CCF B | 一年一次 | 12月下旬 | CV|
 
 ## 📝 注意事项
 

@@ -11,6 +11,9 @@ import bs4
 from urllib.parse import urljoin
 from selenium.webdriver.common.by import By
 from selenium import webdriver
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 import argparse
 
 DBLP_HEADERS = {
@@ -89,8 +92,21 @@ def _retrieve_from_dblp_proceedings(driver, target_list=None):
     pdfurllist = []
     pdfnamelist = []
 
+    # 等待 DBLP 列表加载
+    try:
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.CLASS_NAME, 'publ-list'))
+        )
+    except TimeoutException:
+        print("Timeout waiting for DBLP proceedings list to load.")
+        return [], []
+
     soup = bs4.BeautifulSoup(driver.page_source, features="lxml")
     ele_list = soup.select('ul.publ-list')
+    
+    if not ele_list:
+        print("No paper list found on DBLP page.")
+        return [], []
 
     if target_list is None:
         target_indexes = DBLP_VISION_SECTION_INDEXES
@@ -99,6 +115,7 @@ def _retrieve_from_dblp_proceedings(driver, target_list=None):
     else:
         target_indexes = target_list
 
+    print(f"Scanning {len(target_indexes)} sections on DBLP...")
     for idx in target_indexes:
         if idx >= len(ele_list):
             continue
@@ -114,6 +131,12 @@ def _retrieve_from_dblp_proceedings(driver, target_list=None):
             if not paper_from_link:
                 continue
 
+            # DBLP 上的链接可能直接指向 PDF，也可能指向另一个页面
+            # 如果是 ACM 链接，此逻辑目前可能无法获取 PDF 链接，因为 ACM 有反爬虫
+            if "dl.acm.org" in paper_from_link:
+                # print(f"Skipping ACM link for {title} (requires advanced scraping)")
+                continue
+
             try:
                 paper_response = requests.get(paper_from_link, headers=DBLP_HEADERS, timeout=30)
                 paper_response.raise_for_status()
@@ -121,6 +144,7 @@ def _retrieve_from_dblp_proceedings(driver, target_list=None):
                 continue
 
             paper_soup = bs4.BeautifulSoup(paper_response.text, features='lxml')
+            # 这里的 selector 主要针对 AAAI (OJS)
             pdf_node = paper_soup.select_one("a.obj_galley_link.pdf")
             if pdf_node is None:
                 continue
@@ -191,6 +215,16 @@ def retrieve_from_siggraph(driver):
 def retrieve_from_CVPR(driver, year):
     pdfurllist = []
     pdfnamelist = []
+    
+    # 等待页面元素加载
+    try:
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.CLASS_NAME, 'ptitle'))
+        )
+    except TimeoutException:
+        print(f"Timeout waiting for CVPR {year} papers to load.")
+        return [], []
+
     if int(year) > 2020:  # 2020年以后
         title_element_list = driver.find_elements(by=By.CLASS_NAME, value='ptitle')
         url_element_list = driver.find_elements(by=By.PARTIAL_LINK_TEXT, value='pdf')
@@ -199,19 +233,36 @@ def retrieve_from_CVPR(driver, year):
             pdfurllist.append(url_element_list[i].get_attribute('href'))
     else:  # 2020年之前
         for day in range(3):
-            driver.find_elements(by=By.XPATH, value='//body/div[3]/dl/dd/a')[day].click()
-            title_element_list = driver.find_elements(by=By.CLASS_NAME, value='ptitle')
-            url_element_list = driver.find_elements(by=By.PARTIAL_LINK_TEXT, value='pdf')
-            for i, element in enumerate(url_element_list):
-                pdfnamelist.append(title_element_list[i].text)
-                pdfurllist.append(url_element_list[i].get_attribute('href'))
-            driver.back()
+            try:
+                days_elements = driver.find_elements(by=By.XPATH, value='//body/div[3]/dl/dd/a')
+                if not days_elements:
+                    break
+                days_elements[day].click()
+                WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'ptitle')))
+                
+                title_element_list = driver.find_elements(by=By.CLASS_NAME, value='ptitle')
+                url_element_list = driver.find_elements(by=By.PARTIAL_LINK_TEXT, value='pdf')
+                for i, element in enumerate(url_element_list):
+                    pdfnamelist.append(title_element_list[i].text)
+                    pdfurllist.append(url_element_list[i].get_attribute('href'))
+                driver.back()
+                WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//body/div[3]/dl/dd/a')))
+            except (TimeoutException, IndexError):
+                continue
     return pdfurllist, pdfnamelist
 
 
 def retrieve_from_ICCV(driver):
     pdfurllist = []
     pdfnamelist = []
+
+    try:
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.CLASS_NAME, 'ptitle'))
+        )
+    except TimeoutException:
+        print("Timeout waiting for ICCV papers to load.")
+        return [], []
 
     title_element_list = driver.find_elements(by=By.CLASS_NAME, value='ptitle')
     url_element_list = driver.find_elements(by=By.PARTIAL_LINK_TEXT, value='pdf')
@@ -225,16 +276,38 @@ def retrieve_from_ECCV(driver, year):
     pdfurllist = []
     pdfnamelist = []
 
+    # 等待页面加载
+    try:
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.CLASS_NAME, 'accordion'))
+        )
+    except TimeoutException:
+        print(f"Timeout waiting for ECCV {year} papers to load.")
+        return [], []
+
     # 需要click一下按钮才能下载
     button_element = driver.find_elements(by=By.CLASS_NAME, value='accordion')
     pattern = str(year)
     # 点击对应年份的按钮
-    time.sleep(2)  # 等待2s，让页面加载一会
+    found_year = False
     for i, element in enumerate(button_element):
         if re.search(pattern, element.text):
             driver.execute_script("arguments[0].click();", element)
-            time.sleep(2)
+            found_year = True
             break
+    
+    if not found_year:
+        print(f"Could not find section for year {year} in ECCV.")
+        return [], []
+
+    # 等待对应年份的内容展开
+    try:
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CLASS_NAME, 'ptitle'))
+        )
+    except TimeoutException:
+        print(f"Timeout waiting for ECCV {year} ptitle to appear.")
+
     # 找到论文和连接列表
     elementllist = driver.find_elements(by=By.CLASS_NAME, value='ptitle')
     url_element_list = driver.find_elements(by=By.PARTIAL_LINK_TEXT, value='pdf')
@@ -333,13 +406,12 @@ def export_papers_metadata(conference, year, conference_url, output_path, patter
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Paper 会议论文数据抓取工具')
-    parser.add_argument('--conference_name', default='AAAI', help='会议名称，例如 AAAI')
-    parser.add_argument('--conference_year', default='2026', help='会议年份，例如 2025')
+    parser.add_argument('--conference_name', default='ACMMM', help='会议名称，例如 CVPR, AAAI, ICCV')
+    parser.add_argument('--conference_year', default='2025', help='会议年份，例如 2024')
     return parser.parse_args()
 
 
 if __name__ == '__main__':
-    # 设置变量 variables to be set
     args = parse_args()
     conference = args.conference_name
     year = args.conference_year

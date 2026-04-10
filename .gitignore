@@ -6,4 +6,5 @@ filtered_data/*
 output/figures/*
 output/tables/*
 downloads/*
-utils
+extracted/*
+utils/*

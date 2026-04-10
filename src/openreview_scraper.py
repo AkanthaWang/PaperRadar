@@ -1,5 +1,8 @@
 '''
 支持抓取以下会议的论文数据：ICML、ICLR、NeurIPS
+ICML: https://openreview.net/group?id=ICML.cc
+ICLR: https://openreview.net/group?id=ICLR.cc
+NeurIPS: https://openreview.net/group?id=NeurIPS.cc
 '''
 
 import argparse
@@ -87,7 +90,7 @@ class OpenReviewScraper:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='OpenReview 会议论文数据抓取工具')
-    parser.add_argument('--conference_name', default='NeurIPS', help='会议名称，例如 ICML')
+    parser.add_argument('--conference_name', default='ICML', help='会议名称，例如 ICML')
     parser.add_argument('--conference_year', default='2025', help='会议年份，例如 2025')
     parser.add_argument('--baseurl', default='https://api2.openreview.net', help='OpenReview API Base URL')
     return parser.parse_args()
