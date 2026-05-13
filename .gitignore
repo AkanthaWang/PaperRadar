@@ -8,3 +8,12 @@ output/tables/*
 downloads/*
 extracted/*
 utils/*
+analyze_paper/assets/
+analyze_paper/assets_test/
+analyze_paper/assets_test2/
+analyze_paper/cache/
+analyze_paper/cache_test/
+analyze_paper/outputs/
+analyze_paper/outputs_test/ 
+analyze_paper/outputs_test2/
+
