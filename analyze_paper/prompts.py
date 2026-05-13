@@ -163,8 +163,14 @@ def build_reduce_prompt(parsed: ParsedPaper, chunk_summaries: list[str]) -> str:
 """
 
 
-def build_markdown_summary_prompt(source_name: str, markdown: str, max_chars: int) -> str:
+def build_markdown_summary_prompt(
+    source_name: str,
+    markdown: str,
+    max_chars: int,
+    visual_context: str = "",
+) -> str:
     content = truncate_text(markdown, max_chars)
+    visual_section = f"\n\n{visual_context}\n" if visual_context else ""
     return f"""下面是论文 `{source_name}` 经过 MinerU 解析得到的 Markdown。请基于这些内容生成结构化中文总结。
 
 请按以下结构输出：
@@ -197,6 +203,9 @@ def build_markdown_summary_prompt(source_name: str, markdown: str, max_chars: in
 - 结果中如果有具体数值，请优先列出；没有则写“原文未明确给出”。
 - 不要复述整篇论文，重点总结创新点、方法逻辑和实验结论。
 - 如果某一项在 Markdown 中找不到可靠信息，请写“原文未明确给出”。
+- 如果提供了 MinerU JSON 图表与上下文，请把最相关的图片或表格 Markdown 图片链接插入到对应小节，不要统一放在末尾。
+- 插图位置规则：方法流程图放“核心方法”，数据集/实验表格和结果曲线放“关键实验与结果”，问题示意图放“研究问题”，失败案例或不足相关图放“局限与不足”。
+{visual_section}
 
 MinerU Markdown：
 
@@ -206,7 +215,7 @@ MinerU Markdown：
 
 def build_markdown_chunk_prompt(source_name: str, chunk: str, index: int, total: int) -> str:
     return f"""下面是论文 `{source_name}` 的 MinerU Markdown 片段 {index}/{total}。
-请把这个片段整理成中文阅读笔记，供后续合并成完整论文总结。
+请把这个片段整理成精简中文阅读笔记，供后续合并成完整论文总结。
 
 请提取：
 - 论文主题、问题定义或动机
@@ -216,6 +225,7 @@ def build_markdown_chunk_prompt(source_name: str, chunk: str, index: int, total:
 - 局限、不足或未来工作
 
 只总结本片段明确出现的信息，不要补全或猜测。
+输出要求：最多 800 个中文字符，优先保留具体数值、方法名、数据集名和结论。
 
 Markdown 片段：
 
@@ -263,4 +273,26 @@ def build_markdown_reduce_prompt(source_name: str, chunk_summaries: list[str]) -
 阅读笔记：
 
 {merged}
+"""
+
+
+def build_visual_placement_prompt(source_name: str, summary_markdown: str, visual_context: str) -> str:
+    return f"""下面是论文 `{source_name}` 的中文总结，以及 MinerU JSON 提取出的图表、caption 和前后文上下文。
+请在不改写主要总结内容的前提下，把最相关的图片或表格 Markdown 图片链接插入到对应小节。
+
+要求：
+- 只插入图表，不要删除或大幅改写原有总结。
+- 方法流程图放“核心方法”。
+- 数据集、实验表格、结果曲线、对比图放“关键实验与结果”。
+- 问题示意图或动机图放“研究问题”。
+- 失败案例、限制或不足相关图放“局限与不足”。
+- 每张图插入后，用一句简短中文说明它支持的结论。
+- 不要把所有图都放到文末；最多插入 8 张最关键图表。
+- 输出完整 Markdown。
+
+中文总结：
+
+{summary_markdown}
+
+{visual_context}
 """

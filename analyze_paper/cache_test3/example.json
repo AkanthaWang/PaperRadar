@@ -1,0 +1,19 @@
+{
+  "status": "ok",
+  "parser": "mineru",
+  "summary_status": "ok",
+  "task_id": "bf6b207f-0783-4568-86fa-f8701561a41b",
+  "output_path": "D:\\Github\\PaperRadar\\analyze_paper\\outputs_test3\\example.md",
+  "summary_output_path": "D:\\Github\\PaperRadar\\analyze_paper\\outputs_test3\\example.md",
+  "raw_markdown_path": "D:\\Github\\PaperRadar\\analyze_paper\\outputs_test3\\example.mineru.md",
+  "visuals_path": "D:\\Github\\PaperRadar\\analyze_paper\\outputs_test3\\example.mineru.visuals.json",
+  "visual_count": 11,
+  "mineru_output_dir": "D:\\Github\\PaperRadar\\analyze_paper\\assets_test3\\example_fbac805dc8\\bf6b207f-0783-4568-86fa-f8701561a41b",
+  "updated_at": "2026-05-13T10:31:17",
+  "result": {
+    "task_id": "bf6b207f-0783-4568-86fa-f8701561a41b",
+    "state": "done",
+    "err_msg": "",
+    "full_zip_url": "https://cdn-mineru.openxlab.org.cn/pdf/2026-05-08/4d167bad-02f3-49cf-ab47-970018affd76.zip"
+  }
+}

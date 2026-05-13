@@ -59,16 +59,23 @@ class AnalyzerSettings:
     outputs_dir: Path
     assets_dir: Path
     cache_dir: Path
+    llm_provider: str
     auth_mode: str
     app_id: str | None
     app_key: str | None = field(repr=False)
     domain: str
     uri: str
     model: str
+    ecnu_api_key: str | None = field(repr=False)
+    ecnu_base_url: str
+    ecnu_model: str
+    ecnu_thinking_type: str
     timeout: int
     temperature: float
     max_images: int
     max_chars: int
+    summary_max_chars: int
+    summary_chunk_chars: int
     chunk_chars: int
     max_chunks: int
     max_retries: int
@@ -110,16 +117,33 @@ class AnalyzerSettings:
                 env_first("PAPER_ANALYZER_CACHE_DIR", default="analyze_paper/cache"),
                 project_root,
             ),
+            llm_provider=env_first("PAPER_ANALYZER_LLM_PROVIDER", "LLM_PROVIDER", default="vivo") or "vivo",
             auth_mode=env_first("PAPER_ANALYZER_AUTH_MODE", default="hmac") or "hmac",
             app_id=env_first("PAPER_ANALYZER_APP_ID", "VIVO_APP_ID", "APP_ID"),
             app_key=env_first("PAPER_ANALYZER_APP_KEY", "VIVO_APP_KEY", "APP_KEY"),
             domain=env_first("PAPER_ANALYZER_DOMAIN", default="api-ai.vivo.com.cn") or "api-ai.vivo.com.cn",
             uri=env_first("PAPER_ANALYZER_URI", default="/vivogpt/completions") or "/vivogpt/completions",
             model=env_first("PAPER_ANALYZER_MODEL", default="vivo-BlueLM-TB-Pro") or "vivo-BlueLM-TB-Pro",
+            ecnu_api_key=env_first("ECNU_API_KEY", "PAPER_ANALYZER_ECNU_API_KEY"),
+            ecnu_base_url=env_first(
+                "ECNU_BASE_URL",
+                "PAPER_ANALYZER_ECNU_BASE_URL",
+                default="https://chat.ecnu.edu.cn/open/api/v1",
+            )
+            or "https://chat.ecnu.edu.cn/open/api/v1",
+            ecnu_model=env_first("ECNU_MODEL", "PAPER_ANALYZER_ECNU_MODEL", default="ecnu-max") or "ecnu-max",
+            ecnu_thinking_type=env_first(
+                "ECNU_THINKING_TYPE",
+                "PAPER_ANALYZER_ECNU_THINKING_TYPE",
+                default="disabled",
+            )
+            or "disabled",
             timeout=env_int("PAPER_ANALYZER_TIMEOUT", 120),
             temperature=env_float("PAPER_ANALYZER_TEMPERATURE", 0.2),
             max_images=env_int("PAPER_ANALYZER_MAX_IMAGES", 8),
             max_chars=env_int("PAPER_ANALYZER_MAX_CHARS", 60000),
+            summary_max_chars=env_int("PAPER_ANALYZER_SUMMARY_MAX_CHARS", 32000),
+            summary_chunk_chars=env_int("PAPER_ANALYZER_SUMMARY_CHUNK_CHARS", 12000),
             chunk_chars=env_int("PAPER_ANALYZER_CHUNK_CHARS", 24000),
             max_chunks=env_int("PAPER_ANALYZER_MAX_CHUNKS", 8),
             max_retries=env_int("PAPER_ANALYZER_MAX_RETRIES", 2),
@@ -146,6 +170,17 @@ class AnalyzerSettings:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def require_llm_credentials(self) -> None:
+        provider = (self.llm_provider or "vivo").strip().lower()
+        if provider == "ecnu":
+            if not self.ecnu_api_key:
+                raise RuntimeError(
+                    "Missing ECNU API key: ECNU_API_KEY or PAPER_ANALYZER_ECNU_API_KEY. "
+                    "Put it in the repository .env file or export it before running."
+                )
+            return
+        if provider != "vivo":
+            raise RuntimeError(f"Unsupported LLM provider: {self.llm_provider}. Use vivo or ecnu.")
+
         auth_mode = (self.auth_mode or "hmac").strip().lower()
         missing = []
         if auth_mode != "bearer" and not self.app_id:

@@ -11,6 +11,7 @@ utils/*
 analyze_paper/assets/
 analyze_paper/assets_test/
 analyze_paper/assets_test2/
+analyze_paper/assets_test3/
 analyze_paper/cache/
 analyze_paper/cache_test/
 analyze_paper/outputs/
