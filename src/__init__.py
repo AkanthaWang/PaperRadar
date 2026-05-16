@@ -1,0 +1,1 @@
+"""PaperRadar source package."""
