@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
+from datetime import datetime
 from pathlib import Path
 
 from src.mineru_parser.mineru_client import MinerUClient
@@ -31,8 +33,29 @@ def parse_pdfs(args: argparse.Namespace) -> list[Path]:
             parsed_path = parse_one_pdf(pdf_path, settings, mineru_client, overwrite=args.overwrite)
             update_parse_status(args, pdf_path, parsed_path)
             outputs.append(parsed_path)
+            # 打印标准化 INFO 日志，包含时间和成功文件名
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[INFO] {now} 成功解析: {Path(pdf_path).name}")
         except Exception as exc:
             failures += 1
+            # 将失败的 PDF 移动到 downloads_dir/error
+            try:
+                downloads_dir = Path(settings.downloads_dir)
+                error_dir = downloads_dir / "error"
+                error_dir.mkdir(parents=True, exist_ok=True)
+                src_path = Path(pdf_path)
+                dest = error_dir / src_path.name
+                # 若目标已存在则尝试添加后缀
+                counter = 1
+                while dest.exists():
+                    dest = error_dir / f"{src_path.stem}_failed_{counter}{src_path.suffix}"
+                    counter += 1
+                shutil.move(str(src_path), str(dest))
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                print(f"[INFO] {now} 解析失败，已移动到: {dest}")
+            except Exception:
+                # 如果移动也失败，仍继续抛出原始错误信息到日志
+                pass
             print(f"Failed to parse {pdf_path}: {exc}")
     if failures:
         raise RuntimeError(f"MinerU parsing completed with {failures} failure(s).")

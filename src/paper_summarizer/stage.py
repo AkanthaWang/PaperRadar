@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+from datetime import datetime
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -30,6 +31,9 @@ from src.pipeline.common import analyzer_settings_from_args, collect_stage_pdfs,
 from src.utils.llm_client import create_llm_client
 
 
+MAX_REPORT_TAGS = 5
+
+
 @dataclass(frozen=True)
 class ReportLayout:
     root: Path
@@ -50,21 +54,26 @@ def summarize_pdfs(args: argparse.Namespace) -> list[Path]:
     mineru_client = None
     outputs: list[Path] = []
     failures = 0
+    auto_parse_missing = bool(getattr(args, "parse_missing", False) or getattr(args, "pdf", None))
     for pdf_path in iter_progress(pdfs, "Summarizing"):
         try:
             raw_path = raw_markdown_path(settings, pdf_path)
             if not raw_path.exists():
-                if not args.parse_missing:
+                if not auto_parse_missing:
                     raise FileNotFoundError(f"Missing MinerU Markdown: {raw_path}")
                 if mineru_client is None:
                     mineru_client = MinerUClient.from_settings(settings)
                 parse_one_pdf(pdf_path, settings, mineru_client, overwrite=args.overwrite)
+                raw_path = raw_markdown_path(settings, pdf_path)
             report_path = summarize_one_pdf(pdf_path, settings, client, args, overwrite=args.overwrite)
             update_report_status(args, pdf_path, report_path)
             outputs.append(report_path)
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[INFO] {now} 成功生成摘要: {Path(pdf_path).name}")
         except Exception as exc:
             failures += 1
-            print(f"Failed to summarize {pdf_path}: {exc}")
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[INFO] {now} 无法生成摘要: {Path(pdf_path).name} 错误: {exc}")
     if failures:
         raise RuntimeError(f"Summarization completed with {failures} failure(s).")
     return outputs
@@ -84,7 +93,17 @@ def summarize_one_pdf(pdf_path, settings, client, args: argparse.Namespace, over
     metadata = build_report_metadata(pdf_path, source_stem, markdown, status_row)
     layout = build_report_layout(reports_root, metadata["id"])
     if layout.blog_path.exists() and not overwrite:
-        if not layout.data_path.exists():
+        existing_summary = layout.blog_path.read_text(encoding="utf-8")
+        existing_metadata = read_report_metadata(layout.data_path)
+        generated_tags = metadata.get("tags", [])
+        metadata = merge_report_metadata(metadata, existing_metadata)
+        metadata["tags"] = merge_report_tags(generated_tags, existing_metadata.get("tags"))
+        metadata = ensure_chinese_introduction(metadata, existing_summary)
+        if (
+            not existing_metadata
+            or existing_metadata.get("introduction") != metadata.get("introduction")
+            or existing_metadata.get("tags") != metadata.get("tags")
+        ):
             write_report_metadata(layout.data_path, metadata)
         print(f"Skip existing summary: {layout.blog_path}")
         return layout.blog_path
@@ -111,6 +130,7 @@ def summarize_one_pdf(pdf_path, settings, client, args: argparse.Namespace, over
     summary_markdown = insert_visuals_into_summary(summary_markdown, report_visual_items)
     summary_markdown = rewrite_markdown_image_paths(summary_markdown, image_path_map)
     summary_markdown = copy_referenced_markdown_images(settings, parsed_dir, summary_markdown, layout)
+    metadata = ensure_chinese_introduction(metadata, summary_markdown)
     layout.blog_path.parent.mkdir(parents=True, exist_ok=True)
     layout.blog_path.write_text(summary_markdown, encoding="utf-8")
     write_report_metadata(layout.data_path, metadata)
@@ -270,6 +290,24 @@ def write_report_metadata(path: Path, metadata: dict[str, object]) -> None:
     path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def read_report_metadata(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def merge_report_metadata(metadata: dict[str, object], existing: dict[str, object]) -> dict[str, object]:
+    if not existing:
+        return metadata
+    merged = dict(metadata)
+    merged.update(existing)
+    return merged
+
+
 def build_report_metadata(
     pdf_path,
     stem: str,
@@ -291,7 +329,7 @@ def build_report_metadata(
     category = first_nonempty(row, "category") or "Emotion"
     paper_type = first_nonempty(row, "paper_type", "paperType") or "Method"
     modality = infer_modality(row, markdown)
-    tags = infer_tags(row, modality)
+    tags = infer_tags(row, modality, markdown, full_title)
     introduction = first_nonempty(row, "introduction", "abstract") or extract_named_section(markdown, "abstract", max_chars=500)
 
     return {
@@ -310,6 +348,147 @@ def build_report_metadata(
         },
         "venue": venue,
     }
+
+
+def ensure_chinese_introduction(metadata: dict[str, object], summary_markdown: str) -> dict[str, object]:
+    result = dict(metadata)
+    current = str(result.get("introduction") or "").strip()
+    if has_chinese(current):
+        result["introduction"] = normalize_intro_text(current)
+        return result
+
+    summary_intro = extract_chinese_introduction_from_summary(summary_markdown)
+    if summary_intro:
+        result["introduction"] = summary_intro
+        return result
+
+    result["introduction"] = build_generic_chinese_introduction(result)
+    return result
+
+
+def extract_chinese_introduction_from_summary(markdown: str) -> str:
+    core = first_intro_sentence_from_section(markdown, ["核心问题"])
+    method = first_intro_sentence_from_section(markdown, ["方法介绍", "方法概述"])
+    motivation = first_intro_sentence_from_section(markdown, ["动机和思想"])
+    task = extract_basic_info_field(markdown, "研究任务")
+
+    pieces: list[str] = []
+    for value in [core, method, motivation, task]:
+        value = normalize_intro_text(value)
+        if not is_good_chinese_intro(value):
+            continue
+        if value not in pieces:
+            pieces.append(value)
+        if len(" ".join(pieces)) >= 220:
+            break
+
+    return truncate_intro(" ".join(pieces), max_chars=320)
+
+
+def first_intro_sentence_from_section(markdown: str, titles: list[str]) -> str:
+    section = extract_summary_section(markdown, titles, max_chars=1200)
+    if not section:
+        return ""
+    text = normalize_intro_text(section)
+    for sentence in split_intro_sentences(text):
+        if is_good_chinese_intro(sentence):
+            return sentence
+    return text if is_good_chinese_intro(text) else ""
+
+
+def extract_summary_section(markdown: str, titles: list[str], max_chars: int) -> str:
+    wanted = {normalize_summary_heading(title) for title in titles}
+    lines = markdown.splitlines()
+    start = None
+    level = 0
+    for index, line in enumerate(lines):
+        match = re.match(r"^(#{1,6})\s+(.+?)\s*$", line.strip())
+        if not match:
+            continue
+        title = normalize_summary_heading(match.group(2))
+        if title in wanted:
+            start = index + 1
+            level = len(match.group(1))
+            break
+    if start is None:
+        return ""
+
+    collected: list[str] = []
+    for line in lines[start:]:
+        match = re.match(r"^(#{1,6})\s+\S+", line.strip())
+        if match and len(match.group(1)) <= level:
+            break
+        collected.append(line)
+        if len("\n".join(collected)) >= max_chars:
+            break
+    return "\n".join(collected).strip()
+
+
+def extract_basic_info_field(markdown: str, field: str) -> str:
+    section = extract_summary_section(markdown, ["基本信息"], max_chars=1000)
+    if not section:
+        return ""
+    for line in section.splitlines():
+        clean = re.sub(r"^[>\-\*\s]+", "", line).strip()
+        match = re.match(rf"^{re.escape(field)}\s*[:：]\s*(.+)$", clean)
+        if match:
+            return normalize_intro_text(match.group(1))
+    return ""
+
+
+def normalize_summary_heading(value: str) -> str:
+    value = re.sub(r"[#`*_~>\s]+", "", value)
+    value = re.sub(r"[：:，,。.!！?？（）()\[\]【】]+", "", value)
+    return value.lower()
+
+
+def normalize_intro_text(value: str) -> str:
+    value = re.sub(r"!\[[^\]]*\]\([^)]+\)", " ", value)
+    value = re.sub(r"\[[^\]]+\]\([^)]+\)", lambda match: match.group(0).split("](", 1)[0].lstrip("["), value)
+    value = re.sub(r"<[^>]+>", " ", value)
+    value = re.sub(r"^[#>\-\*\d\.\s]+", "", value, flags=re.MULTILINE)
+    value = re.sub(r"[`*_~]+", "", value)
+    value = re.sub(r"\s+", " ", value)
+    return value.strip(" \t\r\n-，,；;：:")
+
+
+def split_intro_sentences(text: str) -> list[str]:
+    text = normalize_intro_text(text)
+    if not text:
+        return []
+    matches = re.findall(r"[^。！？!?；;]+[。！？!?；;]?", text)
+    return [sentence.strip() for sentence in matches if sentence.strip()]
+
+
+def is_good_chinese_intro(value: str) -> bool:
+    if not value or not has_chinese(value):
+        return False
+    lowered = value.lower()
+    bad_markers = ["llm 总结失败", "请修复", "mineru markdown", "mineru visual json"]
+    if any(marker in lowered for marker in bad_markers):
+        return False
+    return len(value) >= 12
+
+
+def has_chinese(value: str) -> bool:
+    return re.search(r"[\u3400-\u9fff]", value) is not None
+
+
+def truncate_intro(text: str, max_chars: int) -> str:
+    text = normalize_intro_text(text)
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars].rstrip()
+    for punctuation in ["。", "！", "？", "；"]:
+        index = cut.rfind(punctuation)
+        if index >= 80:
+            return cut[: index + 1]
+    return cut.rstrip("，,；;：:、 ") + "。"
+
+
+def build_generic_chinese_introduction(metadata: dict[str, object]) -> str:
+    title = str(metadata.get("fullTitle") or metadata.get("title") or "该论文").strip()
+    return f"本文围绕《{title}》展开研究，主要内容包括问题背景、方法设计、实验结果和可借鉴点，详见对应博客总结。"
 
 
 def infer_source_metadata(pdf_path, stem: str) -> tuple[str, str, str]:
@@ -418,22 +597,239 @@ def infer_modality(row: dict[str, object], markdown: str) -> str:
     return matched[0] if matched else "image"
 
 
-def infer_tags(row: dict[str, object], modality: str) -> list[str]:
-    raw = first_nonempty(row, "tags", "matched_keywords", "keywords")
-    tags = split_tags(raw)
-    if "emotion" not in {tag.lower() for tag in tags}:
-        tags.insert(0, "Emotion")
-    modality_tag = modality.capitalize()
-    if modality_tag and modality_tag.lower() not in {tag.lower() for tag in tags}:
-        tags.append(modality_tag)
-    return tags[:8]
+TAG_ALIASES = {
+    "affect": "Affective Computing",
+    "affective computing": "Affective Computing",
+    "audio": "Audio",
+    "audio driven": "Audio-Driven",
+    "audio-driven": "Audio-Driven",
+    "au": "Action Unit",
+    "action unit": "Action Unit",
+    "action units": "Action Unit",
+    "face": "Face",
+    "facial": "Face",
+    "facial expression": "Facial Expression Recognition",
+    "facial expression recognition": "Facial Expression Recognition",
+    "fer": "Facial Expression Recognition",
+    "emotion": "Emotion",
+    "emotion recognition": "Emotion Recognition",
+    "visual emotion": "Visual Emotion Recognition",
+    "visual emotion recognition": "Visual Emotion Recognition",
+    "ver": "Visual Emotion Recognition",
+    "image": "Image",
+    "vision": "Computer Vision",
+    "video": "Video",
+    "text": "Text",
+    "language": "Language",
+    "multimodal": "Multimodal",
+    "multi modal": "Multimodal",
+    "multi-modal": "Multimodal",
+    "cross domain": "Cross-Domain",
+    "cross-domain": "Cross-Domain",
+    "domain adaptation": "Domain Adaptation",
+    "unsupervised": "Unsupervised Learning",
+    "supervised": "Supervised Learning",
+    "diffusion": "Diffusion",
+    "generative": "Generative Model",
+    "generation": "Generation",
+    "talking head": "Talking Head Generation",
+    "lip sync": "Lip Synchronization",
+    "lip-sync": "Lip Synchronization",
+    "clip": "CLIP",
+    "vlm": "VLM",
+    "llm": "LLM",
+    "lora": "LoRA",
+    "moe": "MoE",
+    "transformer": "Transformer",
+    "attention": "Attention",
+    "contrastive learning": "Contrastive Learning",
+    "prompt learning": "Prompt Learning",
+    "knowledge distillation": "Knowledge Distillation",
+    "knowledge graph": "Knowledge Graph",
+    "benchmark": "Benchmark",
+    "dataset": "Dataset",
+    "ablation": "Ablation Study",
+    "classification": "Classification",
+    "recognition": "Recognition",
+    "情感": "Emotion",
+    "情感识别": "Emotion Recognition",
+    "视觉情感": "Visual Emotion Recognition",
+    "表情识别": "Facial Expression Recognition",
+    "面部表情": "Facial Expression Recognition",
+    "动作单元": "Action Unit",
+    "跨域": "Cross-Domain",
+    "领域自适应": "Domain Adaptation",
+    "无监督": "Unsupervised Learning",
+    "扩散": "Diffusion",
+    "多模态": "Multimodal",
+    "图像": "Image",
+    "视频": "Video",
+    "音频": "Audio",
+    "文本": "Text",
+}
+
+
+TAG_RULES = [
+    ("Facial Expression Recognition", [r"\bfer\b", r"facial expression"]),
+    ("Visual Emotion Recognition", [r"\bver\b", r"visual emotion"]),
+    ("Emotion Recognition", [r"emotion recognition", r"affect recognition"]),
+    ("Affective Computing", [r"affective computing", r"emotion analysis"]),
+    ("Cross-Domain", [r"cross[-\s]?domain", r"domain shift"]),
+    ("Domain Adaptation", [r"domain adaptation", r"\bda\b"]),
+    ("Unsupervised Learning", [r"unsupervised", r"without target labels"]),
+    ("Universal Cross-Domain", [r"universal cross[-\s]?domain", r"\bucd?ver\b"]),
+    ("Diffusion", [r"diffusion", r"denois"]),
+    ("Counterfactual Learning", [r"counterfactual"]),
+    ("Knowledge Alignment", [r"knowledge[-\s]?aligned", r"knowledge alignment"]),
+    ("CLIP", [r"\bclip\b"]),
+    ("VLM", [r"\bvlm\b", r"vision[-\s]?language model"]),
+    ("LLM", [r"\bllm\b", r"large language model"]),
+    ("LoRA", [r"\blora\b"]),
+    ("MoE", [r"\bmoe\b", r"mixture of experts"]),
+    ("Transformer", [r"transformer"]),
+    ("Attention", [r"attention"]),
+    ("Contrastive Learning", [r"contrastive"]),
+    ("Prompt Learning", [r"prompt"]),
+    ("Knowledge Distillation", [r"distillation"]),
+    ("Knowledge Graph", [r"knowledge graph", r"triplet"]),
+    ("Action Unit", [r"\bau\b", r"action unit"]),
+    ("Talking Head Generation", [r"talking head"]),
+    ("Lip Synchronization", [r"lip[-\s]?sync"]),
+    ("Audio-Driven", [r"audio[-\s]?driven", r"speech[-\s]?driven"]),
+    ("Generation", [r"generation", r"generate"]),
+    ("Classification", [r"classification", r"classifier"]),
+    ("Benchmark", [r"benchmark", r"state[-\s]?of[-\s]?the[-\s]?art", r"\bsota\b"]),
+    ("Dataset", [r"dataset", r"emoset", r"ser30k", r"emo8"]),
+]
+
+
+MODALITY_TAGS = {
+    "image": ["Image"],
+    "video": ["Video"],
+    "audio": ["Audio"],
+    "text": ["Text", "Language"],
+    "multimodal": ["Multimodal"],
+}
+
+
+def infer_tags(row: dict[str, object], modality: str, markdown: str, full_title: str) -> list[str]:
+    tags: list[str] = []
+    add_tag(tags, "Emotion")
+
+    text = tag_source_text(row, markdown, full_title)
+    for tag, patterns in TAG_RULES:
+        if any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in patterns):
+            add_tag(tags, tag)
+
+    for tag in modality_tags(modality):
+        add_tag(tags, tag)
+
+    raw_values = [
+        first_nonempty(row, "tags"),
+        first_nonempty(row, "matched_keywords"),
+        first_nonempty(row, "keywords"),
+        first_nonempty(row, "category"),
+    ]
+    for raw in raw_values:
+        for tag in split_tags(raw):
+            add_tag(tags, tag)
+
+    return tags[:MAX_REPORT_TAGS]
+
+
+def merge_report_tags(generated_tags: object, existing_tags: object) -> list[str]:
+    tags: list[str] = []
+    for value in [generated_tags, existing_tags]:
+        for tag in split_tag_value(value):
+            add_tag(tags, tag)
+    return tags[:MAX_REPORT_TAGS]
+
+
+def add_tag(tags: list[str], raw_tag: str) -> None:
+    tag = normalize_english_tag(raw_tag)
+    if not tag:
+        return
+    if tag.lower() in {existing.lower() for existing in tags}:
+        return
+    tags.append(tag)
+
+
+def normalize_english_tag(value: str) -> str:
+    tag = re.sub(r"[`*_#]+", " ", str(value or ""))
+    tag = re.sub(r"\s+", " ", tag).strip(" \t\r\n,;|/、，；")
+    if not tag:
+        return ""
+
+    alias_key = tag_alias_key(tag)
+    if alias_key in TAG_ALIASES:
+        return TAG_ALIASES[alias_key]
+    for key, canonical in TAG_ALIASES.items():
+        if has_chinese(key) and key in tag:
+            return canonical
+
+    if has_chinese(tag):
+        return ""
+    if not re.search(r"[A-Za-z]", tag):
+        return ""
+    return format_english_tag(tag)
+
+
+def tag_alias_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def format_english_tag(value: str) -> str:
+    value = re.sub(r"[_-]+", " ", value.strip())
+    value = re.sub(r"\s+", " ", value).strip()
+    acronyms = {"ai", "au", "clip", "fer", "gan", "llm", "moe", "nlp", "uc", "vae", "ver", "vlm"}
+    special = {"lora": "LoRA"}
+    words = []
+    for word in value.split(" "):
+        key = word.lower()
+        if key in special:
+            words.append(special[key])
+        elif key in acronyms:
+            words.append(key.upper())
+        elif len(word) > 1 and word.isupper():
+            words.append(word)
+        else:
+            words.append(word[:1].upper() + word[1:].lower())
+    return " ".join(words)
+
+
+def modality_tags(modality: str) -> list[str]:
+    normalized = tag_alias_key(modality)
+    if normalized in MODALITY_TAGS:
+        return MODALITY_TAGS[normalized]
+    return [format_english_tag(modality)] if modality else []
+
+
+def tag_source_text(row: dict[str, object], markdown: str, full_title: str) -> str:
+    values = [
+        full_title,
+        first_nonempty(row, "title"),
+        first_nonempty(row, "keywords"),
+        first_nonempty(row, "abstract"),
+        first_nonempty(row, "matched_keywords"),
+        first_nonempty(row, "tags"),
+        markdown[:10000],
+    ]
+    return " ".join(value for value in values if value).lower()
 
 
 def split_tags(value: str) -> list[str]:
-    if not value:
+    return split_tag_value(value)
+
+
+def split_tag_value(value: object) -> list[str]:
+    if value in (None, ""):
         return []
-    tags = [item.strip() for item in re.split(r"[,;|/]+", value) if item.strip()]
-    return dedupe_preserve_order(tags)
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value).strip()
+    if not text:
+        return []
+    return [item.strip() for item in re.split(r"[,;|/、，；]+", text) if item.strip()]
 
 
 def dedupe_preserve_order(values: list[str]) -> list[str]:

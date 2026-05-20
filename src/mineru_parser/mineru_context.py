@@ -413,15 +413,9 @@ def display_visual_label(item: MinerUVisualItem, heading: SummaryHeading | None 
 
 
 def render_chinese_caption(item: MinerUVisualItem, label: str, number: str = "") -> str:
-    prefix = "表" if label == "Table" else "图"
-    number = number or extract_visual_number(item.caption, label.lower()) or str(item.index)
+    # 仅返回中文化后的图/表说明文本，移除自动添加的“图/表编号”与“第 X 页”标注
     caption = translate_caption_to_chinese(item.caption)
-    parts = [f"{prefix} {number}"]
-    if item.page:
-        parts.append(f"第 {item.page} 页")
-    if caption:
-        parts.append(caption)
-    return "，".join(parts)
+    return caption.strip() if caption else ""
 
 
 def extract_visual_ref_from_heading(heading: str) -> tuple[str, str] | None:
