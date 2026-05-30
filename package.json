@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "dev": "node frontend/server.js",
+    "frontend": "node frontend/server.js"
+  }
+}

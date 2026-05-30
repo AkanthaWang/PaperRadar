@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PaperRadar Frontend</title>
+    <link rel="stylesheet" href="/frontend/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="PaperRadar navigation">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">PR</div>
+          <div>
+            <h1>PaperRadar</h1>
+            <p>research workflow</p>
+          </div>
+        </div>
+
+        <nav class="side-nav" aria-label="Main views">
+          <button class="nav-item is-active" type="button" data-view="runner" title="运行 MinerU 和总结任务">
+            <span class="nav-icon" aria-hidden="true">T</span>
+            <span>任务运行</span>
+          </button>
+          <button class="nav-item" type="button" data-view="library" title="查看论文库">
+            <span class="nav-icon" aria-hidden="true">L</span>
+            <span>论文库</span>
+          </button>
+          <button class="nav-item" type="button" data-view="report" title="查看当前报告">
+            <span class="nav-icon" aria-hidden="true">R</span>
+            <span>报告预览</span>
+          </button>
+        </nav>
+
+        <section class="pipeline-panel" aria-labelledby="pipeline-title">
+          <h2 id="pipeline-title">Pipeline</h2>
+          <ol class="pipeline-list">
+            <li><span>Fetch</span><small>会议元数据</small></li>
+            <li><span>Filter</span><small>关键词筛选</small></li>
+            <li><span>Download</span><small>PDF 本地化</small></li>
+            <li><span>Parse</span><small>MinerU 解析</small></li>
+            <li><span>Summarize</span><small>中文报告</small></li>
+          </ol>
+        </section>
+
+        <section class="source-panel" aria-labelledby="source-title">
+          <h2 id="source-title">Data source</h2>
+          <p>读取 <code>data/reports/all_reports.json</code>、<code>blog/*.md</code> 和 <code>img/*</code>。</p>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Local research dashboard</p>
+            <h2>论文雷达工作台</h2>
+          </div>
+          <div class="status-pill" id="data-status" role="status">正在加载报告数据</div>
+        </header>
+
+        <section class="runner-view" id="runner-view">
+          <div class="runner-grid">
+            <form class="runner-panel" id="job-form">
+              <div class="panel-head panel-head-plain">
+                <div>
+                  <h3>运行解析与总结</h3>
+                  <p>选择 PDF 文件、PDF 目录，或直接使用默认论文目录，任务会执行 MinerU 解析和 LLM 中文总结。</p>
+                </div>
+              </div>
+
+              <div class="source-picker" aria-label="PDF source picker">
+                <input id="pdf-files" type="file" accept="application/pdf,.pdf" multiple hidden />
+                <input id="pdf-directory" type="file" accept="application/pdf,.pdf" webkitdirectory directory multiple hidden />
+                <button class="source-option is-selected" id="pick-files" type="button">
+                  <strong>选择 PDF</strong>
+                  <span>可多选文件</span>
+                </button>
+                <button class="source-option" id="pick-directory" type="button">
+                  <strong>选择目录</strong>
+                  <span>浏览器目录选择</span>
+                </button>
+                <button class="source-option" id="use-default-path" type="button">
+                  <strong>默认目录</strong>
+                  <span>data/pdfs</span>
+                </button>
+              </div>
+
+              <div class="selected-source" id="selected-source">尚未选择 PDF。</div>
+
+              <div class="runner-options">
+                <label class="select-field">
+                  <span>LLM Provider</span>
+                  <select id="llm-provider" name="llmProvider">
+                    <option value="env">使用 .env</option>
+                    <option value="ecnu">ECNU</option>
+                    <option value="vivo">vivo</option>
+                  </select>
+                </label>
+
+                <label class="path-field compact">
+                  <span>ECNU Model</span>
+                  <input id="ecnu-model" name="ecnuModel" type="text" placeholder="默认使用 .env" autocomplete="off" />
+                </label>
+
+                <label class="path-field compact">
+                  <span>处理数量上限</span>
+                  <input id="job-limit" name="limit" type="number" min="1" step="1" placeholder="全部" />
+                </label>
+              </div>
+
+              <div class="runner-options">
+                <label class="path-field compact">
+                  <span>解析输出目录</span>
+                  <input id="outputs-dir" name="outputsDir" type="text" placeholder="默认 data/parsed" autocomplete="off" />
+                </label>
+                <label class="path-field compact">
+                  <span>报告输出目录</span>
+                  <input id="reports-dir" name="reportsDir" type="text" placeholder="默认 data/reports" autocomplete="off" />
+                </label>
+              </div>
+
+              <div class="runner-switches">
+                <label>
+                  <input id="overwrite" name="overwrite" type="checkbox" />
+                  <span>覆盖已有解析和报告</span>
+                </label>
+                <label>
+                  <input id="recursive" name="recursive" type="checkbox" />
+                  <span>扫描子目录</span>
+                </label>
+              </div>
+
+              <div class="runner-actions">
+                <button class="primary-button" type="submit">开始运行</button>
+                <button class="text-button" id="check-path" type="button">检测选择</button>
+              </div>
+            </form>
+
+            <section class="progress-panel" aria-live="polite">
+              <div class="progress-head">
+                <div>
+                  <p class="eyebrow">Job status</p>
+                  <h3 id="job-title">等待任务</h3>
+                </div>
+                <span class="meta-chip is-accent" id="job-stage">idle</span>
+              </div>
+
+              <div class="progress-meter" aria-label="任务进度">
+                <div class="progress-bar" id="job-progress-bar"></div>
+              </div>
+
+              <div class="job-stats">
+                <div><span id="job-progress-text">0%</span><small>进度</small></div>
+                <div><span id="job-parsed">0</span><small>MinerU</small></div>
+                <div><span id="job-completed">0</span><small>总结</small></div>
+                <div><span id="job-total">0</span><small>总数</small></div>
+                <div><span id="job-failed">0</span><small>失败</small></div>
+              </div>
+
+              <div class="current-file" id="job-current-file">尚未选择文件。</div>
+              <div class="command-box" id="job-command">尚未启动命令。</div>
+
+              <div class="log-head">
+                <h4>运行日志</h4>
+                <div class="log-actions">
+                  <button class="text-button" id="cancel-job" type="button" disabled>取消任务</button>
+                  <button class="text-button" id="clear-log" type="button">清空显示</button>
+                </div>
+              </div>
+              <pre class="log-output" id="job-log">等待任务输出。</pre>
+            </section>
+          </div>
+        </section>
+
+        <section class="toolbar" id="filters-toolbar" aria-label="Paper filters" hidden>
+          <label class="search-field" for="search-input">
+            <span class="search-mark" aria-hidden="true"></span>
+            <input id="search-input" type="search" placeholder="搜索标题、简介、标签" autocomplete="off" />
+          </label>
+
+          <label class="select-field">
+            <span>会议</span>
+            <select id="venue-filter"></select>
+          </label>
+
+          <label class="select-field">
+            <span>年份</span>
+            <select id="year-filter"></select>
+          </label>
+
+          <label class="select-field">
+            <span>模态</span>
+            <select id="modality-filter"></select>
+          </label>
+
+          <label class="select-field">
+            <span>标签</span>
+            <select id="tag-filter"></select>
+          </label>
+
+          <label class="select-field">
+            <span>排序</span>
+            <select id="sort-select">
+              <option value="recent">年份优先</option>
+              <option value="title">标题 A-Z</option>
+              <option value="venue">会议优先</option>
+            </select>
+          </label>
+
+          <div class="segmented-control" role="group" aria-label="Card density">
+            <button class="is-active" type="button" data-density="comfortable" title="舒展显示">舒展</button>
+            <button type="button" data-density="compact" title="紧凑显示">紧凑</button>
+          </div>
+        </section>
+
+        <section id="library-view" hidden>
+          <section class="content-grid">
+            <aside class="list-panel" aria-label="Paper list">
+              <div class="panel-head">
+                <div>
+                  <h3>论文列表</h3>
+                  <p id="result-count">0 篇论文</p>
+                </div>
+                <button class="text-button" id="reset-filters" type="button" title="清空全部筛选">重置</button>
+              </div>
+              <div class="paper-list" id="paper-list" role="listbox" aria-label="Filtered papers"></div>
+            </aside>
+
+            <article class="detail-panel" id="detail-panel" aria-live="polite">
+              <div class="paper-detail" id="paper-detail" hidden>
+              <div class="detail-header">
+                <div>
+                  <p class="eyebrow" id="detail-meta-line"></p>
+                  <h3 id="detail-title"></h3>
+                  <p id="detail-full-title"></p>
+                </div>
+                <div class="detail-actions">
+                  <a class="icon-link" id="blog-link" href="#" target="_blank" rel="noreferrer" title="打开 Markdown 文件">MD</a>
+                  <a class="icon-link" id="json-link" href="#" target="_blank" rel="noreferrer" title="打开 JSON 文件">JS</a>
+                </div>
+              </div>
+
+              <div class="tag-row" id="detail-tags"></div>
+
+              <section class="detail-section" aria-labelledby="intro-title">
+                <h4 id="intro-title">简介</h4>
+                <p id="detail-introduction"></p>
+              </section>
+
+              <section class="report-section" aria-labelledby="report-title">
+                <div class="report-toolbar">
+                  <div>
+                    <h4 id="report-title">报告预览</h4>
+                    <p id="report-state" hidden></p>
+                  </div>
+                  <button class="text-button" id="reload-report" type="button" title="重新读取 Markdown">刷新</button>
+                </div>
+                <div class="report-layout">
+                  <nav class="report-nav" id="report-nav" aria-label="Report sections"></nav>
+                  <div class="markdown-body" id="report-content"></div>
+                </div>
+              </section>
+            </div>
+            </article>
+          </section>
+        </section>
+
+        <section class="report-focus" id="report-view" hidden>
+          <div class="report-focus-head">
+            <div>
+              <p class="eyebrow">Focused reading</p>
+              <h3 id="focus-title">报告预览</h3>
+            </div>
+            <button class="text-button" id="back-to-library" type="button">返回论文库</button>
+          </div>
+          <div class="markdown-body markdown-body-wide" id="focus-report-content"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/frontend/app.js" defer></script>
+  </body>
+</html>
