@@ -1,10 +1,12 @@
 "use strict";
 
-const DATA_PATHS = [
-  "/api/reports",
-  "../data/reports/all_reports.json",
-  "/data/reports/all_reports.json",
-];
+const CONFIG = window.PAPER_RADAR_CONFIG || {};
+const API_BASE = CONFIG.API_BASE_URL || "";
+
+function apiUrl(path) {
+  if (path.startsWith("/")) path = path.slice(1);
+  return API_BASE ? `${API_BASE}/${path}` : `/${path}`;
+}
 
 const state = {
   reports: [],
@@ -215,9 +217,17 @@ function bindEvents() {
 }
 
 async function loadReports() {
+  const dataPaths = [apiUrl("api/reports")];
+  if (!API_BASE) {
+    dataPaths.push("../data/reports/all_reports.json");
+    dataPaths.push("/data/reports/all_reports.json");
+  } else {
+    dataPaths.push(apiUrl("data/reports/all_reports.json"));
+  }
+
   let lastError;
 
-  for (const path of DATA_PATHS) {
+  for (const path of dataPaths) {
     try {
       const response = await fetch(path, { cache: "no-store" });
       if (!response.ok) {
@@ -397,8 +407,8 @@ function renderDetail(report) {
   els.detailTitle.textContent = report.title;
   els.detailFullTitle.textContent = report.fullTitle;
   els.detailIntro.textContent = report.introduction || "暂无简介。";
-  els.blogLink.href = markdownPath(report.id);
-  els.jsonLink.href = `../data/reports/data/${encodeURIComponent(report.id)}.json`;
+  els.blogLink.href = markdownUrl(report.id);
+  els.jsonLink.href = apiUrl(`data/reports/data/${encodeURIComponent(report.id)}.json`);
   els.focusTitle.textContent = report.title;
 
   const baseChips = [
@@ -453,7 +463,7 @@ async function getMarkdown(id) {
     return state.markdownCache.get(id);
   }
 
-  const response = await fetch(markdownPath(id), { cache: "no-store" });
+  const response = await fetch(markdownUrl(id), { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Markdown not found: ${id}`);
   }
@@ -462,8 +472,12 @@ async function getMarkdown(id) {
   return text;
 }
 
+function markdownUrl(id) {
+  return apiUrl(`data/reports/blog/${encodeURIComponent(id)}.md`);
+}
+
 function markdownPath(id) {
-  return `../data/reports/blog/${encodeURIComponent(id)}.md`;
+  return markdownUrl(id);
 }
 
 function switchView(view) {
@@ -508,7 +522,7 @@ async function submitJob() {
   try {
     const response =
       state.sourceMode === "default"
-        ? await fetch("/api/jobs", {
+        ? await fetch(apiUrl("api/jobs"), {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ ...payload, path: "data/pdfs" }),
@@ -533,7 +547,7 @@ async function uploadAndCreateJob(payload) {
   state.selectedFiles.forEach((file) => {
     form.append("pdfs", file, file.webkitRelativePath || file.name);
   });
-  return fetch("/api/jobs/upload", {
+  return fetch(apiUrl("api/jobs/upload"), {
     method: "POST",
     body: form,
   });
@@ -546,7 +560,7 @@ function startJobPolling(id) {
 
   state.jobPollTimer = setInterval(async () => {
     try {
-      const response = await fetch(`/api/jobs/${encodeURIComponent(id)}`);
+      const response = await fetch(apiUrl(`api/jobs/${encodeURIComponent(id)}`));
       const job = await response.json();
       if (!response.ok) {
         throw new Error(job.error || "任务状态读取失败");
@@ -675,7 +689,7 @@ async function checkSourcePath() {
   }
 
   try {
-    const response = await fetch("/api/path-info", {
+    const response = await fetch(apiUrl("api/path-info"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ path: "data/pdfs", recursive: els.recursive.checked }),
@@ -750,7 +764,7 @@ async function cancelCurrentJob() {
   if (!state.currentJobId) return;
   els.cancelJob.disabled = true;
   try {
-    const response = await fetch(`/api/jobs/${encodeURIComponent(state.currentJobId)}/cancel`, {
+    const response = await fetch(apiUrl(`api/jobs/${encodeURIComponent(state.currentJobId)}/cancel`), {
       method: "POST",
     });
     const job = await response.json();
@@ -786,9 +800,10 @@ function renderReportNav(markdown) {
 }
 
 function renderMarkdown(markdown, paperId) {
+  const imgBase = apiUrl("data/reports/img/");
   const normalized = markdown
-    .replace(/src=(["'])\.\.\/img\//g, 'src=$1../data/reports/img/')
-    .replace(/!\[([^\]]*)\]\(\.\.\/img\//g, "![$1](../data/reports/img/");
+    .replace(/src=(["'])\.\.\/img\//g, `src=$1${imgBase}`)
+    .replace(/!\[([^\]]*)\]\(\.\.\/img\//g, `![$1](${imgBase}`);
 
   const lines = normalized.split(/\r?\n/);
   const html = [];
@@ -943,7 +958,7 @@ function isHtmlCaptionLine(line) {
 }
 
 function renderHtmlImage(line, paperId) {
-  const src = attrFromHtml(line, "src") || `../data/reports/img/${paperId}/`;
+  const src = attrFromHtml(line, "src") || apiUrl(`data/reports/img/${paperId}/`);
   const alt = attrFromHtml(line, "alt") || "paper figure";
   return `<img src="${escapeAttribute(src)}" alt="${escapeAttribute(alt)}" loading="lazy" />`;
 }

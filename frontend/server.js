@@ -16,6 +16,14 @@ const PYTHON = process.env.PAPERRADAR_PYTHON || process.env.PYTHON || "python";
 const MAX_LOG_LINES = 800;
 const jobs = new Map();
 
+const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
+
+function setCorsHeaders(response) {
+  response.setHeader("Access-Control-Allow-Origin", CORS_ORIGIN);
+  response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  response.setHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".gif": "image/gif",
@@ -72,6 +80,14 @@ function listen(server, startPort) {
 }
 
 async function handleRequest(request, response) {
+  setCorsHeaders(response);
+
+  if (request.method === "OPTIONS") {
+    response.writeHead(204);
+    response.end();
+    return;
+  }
+
   const url = new URL(request.url, "http://127.0.0.1");
 
   if (request.method === "GET" && url.pathname === "/api/health") {
